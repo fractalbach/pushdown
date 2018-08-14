@@ -60,7 +60,21 @@ import (
 	"fmt"
 )
 
+// tokenKind is used to quickly identify the token, and decide how it
+// should be processed.  It's like a "token descriptor".
+type tokenKind int
+const (
+	terminal tokenKind = iota
+	variable
+	endVariable
+)
+
+type token struct {
+	kind tokenKind
+}
+
 var (
+	stack2 []token
 	stack   = "" // using string for simplicity
 	exInput = "021300211"
 )
