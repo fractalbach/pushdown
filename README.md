@@ -46,9 +46,59 @@ If that popped character is a variable, then the input character must
 be immediately derived by that variable.
 
 
-## Current status 
-Hard-coded example with an input alphabet of Ʃ={0,1,2,3}, and variable
-alphabet V={A,B}.  The stack alphabet equivalent to the union(input
-alphabet, variable alphabet).  Basically, the stack can contain both
-variables and terminal symbols, which represent the location in the
-parse tree.
+## Current status
+
+Currently, things are hard-coded just because it's a first attempt.
+
+- input alphabet **Ʃ={0,1,2,3}**
+- Variables **V={A,B}**.
+- The stack alphabet equivalent to the union(input alphabet, variable
+  alphabet). 
+- '$' is the initial variable.
+
+
+Context-Free Grammar:
+~~~
+$ →  AB
+A →  0A1 ∣ 2
+B →  1B ∣ 3A
+~~~
+
+Grammar (in code form):
+~~~go
+var rulemap = map[rune]([]string){
+	'$': []string{"AB"},
+	'A': []string{"0A1", "2"},
+	'B': []string{"1B", "3A"},
+}
+~~~
+
+Input String:
+~~~
+021300211
+~~~
+
+Internals of how it builds up the stack in order to parse the input string:
+~~~
+- '$' ⊢ AB 
+0 '0' ⊢ A1B 
+1 '2' ⊢ 1B 
+2 '1' ⊢ B 
+3 '3' ⊢ A 
+4 '0' ⊢ A1 
+5 '0' ⊢ A11 
+6 '2' ⊢ 11 
+7 '1' ⊢ 1 
+8 '1' ⊢  
+string accepted!
+~~~
+
+
+Output (**TODO**):
+~~~xml
+<todo>
+	<todo2>
+		<term> organized XML output goes here! </term>
+	</todo2>
+</todo>
+~~~
