@@ -1,173 +1,306 @@
 /*
-CFG to PushDown Automata
+Pushdown
 
-This is a first example of a program that automatically generates
-parsers on the fly.  What "on the fly" means is that the program is
-given an string and a Context-Free Grammar, and the parse tree will be
-output.
-
-
-The Goal:
-
-Designing and Parsing strings should be simple.  Domain-specific
-languages should be casual and easy to use, no matter what they are.
-Heavy-weight or confusing tools are hard to get started with, and/or
-hard to use and share.
-
-Thus, the goal of this tool is to make the creation of a parser very
-simple, without the bells and whistles.  If you can define the
-encoding with a context-free grammar, then its structure can be
-analyzed using this tool.  Major goals include: making the definitions
-simple, and make the error messages helpful.
+Input: (string, grammar), Output: (xml).  The grammar is converted
+into a pushdown automata, which is used to parse the input string.
+The output will be in XML format.
 
 
-Currently:
+Extended Backus Naur Form
 
-Hard-coded example with an input alphabet of Ʃ={0,1,2,3}, and variable
-alphabet V={A,B}.  The stack alphabet equivalent to the union(input
-alphabet, variable alphabet).  Basically, the stack can contain both
-variables and terminal symbols, which represent the location in the
-parse tree.
+The grammar should be in EBNF:
+https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form
 
-
-How it works:
-
-For each input character scanned, a stack character is popped from the
-top of the stack.  If the stack is empty, the program
-ends.  Otherwise, that stack character is analyzed further.
-
-If the popped character and the input character are identical, nothing
-is pushed to the stack, and the scanner procedes.  This usually
-happens when we are inside a variable already, and are fufilling its
-terminals.  An example would be the end parenthesis ')' of some
-expression.
-
-If that popped character is a variable, then the input character must
-be immediately derived by that variable.
-
-
-Later:
-
-Additional stack characters will be added, allowing for parse trees to
-be more easily formed.  Output will be in XML, JSON, or some other
-familar encoding.
-
- */
-
+*/
 package main
 
 import (
 	"fmt"
+	//"regex"
 )
 
 // tokenKind is used to quickly identify the token, and decide how it
 // should be processed.  It's like a "token descriptor".
 type tokenKind int
+
 const (
-	terminal tokenKind = iota
-	variable
-	endVariable
+	Terminal tokenKind = iota
+	Concat
+	Union
+	Variable
+	EndVariable
 )
 
+// the data string of a token will depend on the kind of token it is.
+// For example, Terminals will use the data string literally, and
+// variables will use data string for the name.
 type token struct {
-	kind tokenKind
+	kind         tokenKind
+	list         []*token
+	data, output string
+}
+
+func (t *token) String() string {
+	return t.data
+}
+
+// Term creates a new terminal token.
+func Term(data string) *token {
+	return &token{
+		kind: Terminal,
+		data: data,
+	}
+}
+
+// And creates a concatenation of multiple tokens.
+func And(tokens ...*token) *token {
+	return &token{
+		kind: Concat,
+		list: tokens,
+	}
+}
+
+// Or creates a union of multiple tokens.
+func Or(tokens ...*token) *token {
+	return &token{
+		kind: Union,
+		list: tokens,
+	}
+}
+
+// Var creates a new variable token.  The name should match one of the
+// rules in the defined grammar.
+func Var(name string) *token {
+	return &token{
+		kind:   Variable,
+		data:   name,
+		output: "<" + name + ">",
+	}
 }
 
 var (
-	stack2 []token
-	stack   = "" // using string for simplicity
-	exInput = "021300211"
+	stack              []*token
+	exampleInputString = "x x .(x x.)"
+	ex2 ="021300211"
 )
 
-var rulemap = map[rune]([]string){
-	'$': []string{"AB"},
-	'A': []string{"0A1", "2"},
-	'B': []string{"1B", "3A"},
+var exampleGrammarEBNF = `
+$ = 'a', 'b';
+varA = '0', varA, '1'  |  '2';
+varB = '1', varB | '3', varA;
+`
+var exMap = map[string](*token){
+	"$": And(Var("φ")),
+	"φ": Or(
+		And(
+			Or(Term("("), Term("["), Term("{")),
+			Var("φ"),
+			Var("3"),
+		),
+		And(Term("x"), Var("ζ")),
+		And(Var("ε"), Var("φ"), Var("3")),
+		And(Var("λ"), Var("3")),
+	),
+	"ε": Or(
+		Term("("), Term("["), Term("{"),
+	),
+	"3": Or(
+		Term(")"), Term("]"), Term("}"),
+	),
+	"λ": Or(
+		And(Term("x"), Var("ζ")),
+	),
+	"ζ": Or(
+		Term(";"),
+		Term("."),
+		And(Term(" "), Var("φ")),
+	),
 }
+var exMap2 = map[string](*token){
+	"$": And(Var("a"), Var("b")),
+	"a": Or(
+		And(Term("0"), Var("a"), Term("1")),
+		Term("2"),
+	),
+	"b": Or(
+		And(Term("1"), Var("b")),
+		And(Term("3"), Var("a")),
+	),
+}
+
+/*
+special sequences are used for regular expressions
+`[a-z]|[a-Z]`
+regex.Match(`[a-z]+\`)
+*/
+
+// var rulemap = map[rune]([]string){
+// 	'$': []string{"AB"},
+// 	'A': []string{"0A1", "2"},
+// 	'B': []string{"1B", "3A"},
+// }
 
 func init() {
 	// initialize by pushing the starting production.
-	pushString(rulemap['$'][0])
+	toks, _ := parseToken("$", exMap["$"]) 
+	push(toks...)
 }
 
 // pop() splits the stack into two seperate strings, with one of those
-// strings containing a single character (the last character).  A type conversion needs to be done in order to return a type rune.
-func pop() (rune, error) {
+// strings containing a single character (the last character).  A type
+// conversion needs to be done in order to return a type rune.
+func pop() (*token, error) {
 	if len(stack) <= 0 {
-		return '\b', fmt.Errorf("stack empty.")
+		return nil, fmt.Errorf("stack empty.")
 	}
-	lastChar := rune(stack[len(stack)-1])
-	stack = stack[:(len(stack) - 1)]
-	return lastChar, nil
+	L := len(stack) - 1
+	t := stack[L]
+	stack = stack[:L]
+	return t, nil
 }
 
-func push(r rune) {
-	stack += string(r)
+func push(t ...*token) {
+	t = reverse(t)
+	stack = append(stack, t...)
 }
 
-func pushString(s string) {
-	for i := len(s) - 1; i >= 0; i-- {
-		stack += string(s[i])
-	}
+// In formal theory, a transition takes the 3-tuple (state,
+// inputSymbol, stackSymbol), but in this program, we are only going
+// to use the 2-tuple (inputSymbol, stackSymbol).  Similarily, the
+// result will omit the state, and additionally will include a
+// bubble-up error message.
+//
+// type transition func(string, *token) ([]string, error)
+
+var functionMap = map[tokenKind](func(string, *token) ([]*token, error)){
+	Terminal: parseTerminal,
+	Concat:   parseConcat,
+	Union:    parseUnion,
 }
 
-func transition(r rune) error {
-	v, err := pop()
+// proccess always pops a symbol from the stack.  This token is
+// examined alongside the input symbol to decide what kind of
+// transition will happen.  If the transition results in values that
+// need to pushed to the stack, this will push them.  It's like a
+// "stack manager" function.
+func process(a string) error {
+	X, err := pop()
 	if err != nil {
 		return err
 	}
 
-	// assuming the stack was able to pop a symbol, check to see
-	// what variable the symbol is.  if the popped symbol is a
-	// terminal symbol, then we can simply check for equality.
-	list, exists := rulemap[v]
-	if !exists {
-		if v == r {
-			return nil
-		}
-		return fmt.Errorf(
-			"Invalid symbol. expected(%q), got:(%q)", v, r)
+	// check for the special stack token "EndVar", which only
+	// exists in the stack language. This transition is unlike
+	// others, because it does NOT consume an input token.  To
+	// achieve this affect, call "process" again, using the same
+	// input.
+	switch X.kind {
+		
+	case EndVariable:
+		fmt.Println(X.data)
+		return process(a)
+
+	case Variable:
+		X = exMap[X.data]
+
+	
 	}
+	//δ := functionMap[X.kind]
+	// results, err := δ(a, X)
 
-	// grab the first character from each of the possibilities in
-	// this production.  The list is an array of strings, and we
-	// only want to look at the first character.
-	for i := range list {
+	results, err := parseToken(a, X)
+	if err != nil {
+		return err
+	}
+	push(results...)
 
-		// If we find a match, then the input character is
-		// valid! Hurray!  It matches the variable, and we can
-		// continue.
-		if rune(list[i][0]) == r {
-			if len(list[i]) > 1 {
-				pushString(list[i][1:])
-			}
-			return nil
+	return nil
+}
+
+func parseToken(s string, t *token) ([]*token, error) {
+	
+	var δ (func(string, *token) ([]*token, error))
+	
+	switch t.kind {
+	case Terminal:
+		δ = parseTerminal
+	case Union:
+		δ = parseUnion
+	case Concat:
+		δ = parseConcat
+	case Variable:
+		δ = parseVariable
+	default:
+		panic(fmt.Sprint("unknown token kind(%v", t.kind))
+	}
+	
+	return δ(s, t)
+}
+
+func parseTerminal(s string, t *token) ([]*token, error) {
+	if s != t.data {
+		// return fmt.Errorf(
+		// 	"Invalid symbol. expected(%s), got:(%s)",
+		// 	input.data, t.data,
+		// )
+		return nil, fmt.Errorf("invalid symbol")
+	}
+	return nil, nil
+}
+
+// In a concat, we only need to match the first token.  If the match
+// is successful, the the remaning tokens are pushed to the stack.
+func parseConcat(s string, t *token) ([]*token, error) {
+	// beware of infinite loops caused by the grammar definition.
+	result, err := parseToken(s, t.list[0])
+	if err != nil {
+		return nil, err
+	}
+	if len(t.list) > 1 {
+		result = append(result, t.list[1:]...)
+		return result, nil
+	}
+	return result, nil
+}
+
+// parsing a union looks through all of the possibilties, and does not
+// push any symbols.  Returns an error only if ALL other parses return
+// an error.
+func parseUnion(s string, t *token) ([]*token, error) {
+	for _, tok := range t.list {
+		result, err := parseToken(s, tok)
+		if err == nil {
+			return result, nil
 		}
 	}
-
 	// No matches found?! We aren't in the right context!
-	return fmt.Errorf("variable(%q) wasn't expected symbol(%q).", v, r)
+	return nil, fmt.Errorf("symbol(%s) not expected in token:(%v) ", s, t)
+}
+
+func parseVariable(s string, t *token) ([]*token, error) {
+	return []*token{t}, nil
 }
 
 // prints the reverse of the stack; used for displaying output of the
 // stack in a pushdown automata style.
-func stackRev() string {
-	s := make([]byte, len(stack))
-	for i := len(stack) - 1; i >= 0; i-- {
-		s[len(stack)-1-i] += (stack[i])
+func reverse(a []*token) []*token {
+	var rev []*token
+	for _, t := range a {
+		rev = append([]*token{t}, rev...)
 	}
-	return string(s)
+	return rev
 }
 
 func main() {
-	fmt.Printf("- %q ⊢ %s \n", '$', stackRev())
-	for i, c := range exInput {
-		err := transition(c)
+	// ⊢
+	fmt.Printf("- %q  %s \n", '$', reverse(stack))
+	for i, c := range exampleInputString {
+		err := process(string(c))
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("%d %q ⊢ %s \n", i, exInput[i], stackRev())
+		fmt.Printf("%d %q  %s \n", i, c, reverse(stack))
 	}
 	if len(stack) == 0 {
 		fmt.Println("string accepted!")
