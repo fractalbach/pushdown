@@ -81,7 +81,7 @@ func Var(name string) *token {
 var (
 	stack              []*token
 	exampleInputString = "x x .(x x.)"
-	ex2 ="021300211"
+	ex2                = "021300211"
 )
 
 var exampleGrammarEBNF = `
@@ -127,6 +127,19 @@ var exMap2 = map[string](*token){
 		And(Term("3"), Var("a")),
 	),
 }
+var exMap3 = map[string](*token){
+	"$":    Var("Rule"),
+	"rule": And(Var("lhs"), Term("="), Var("rhs"), Term(";")),
+	"lhs":  Var("Identifier"),
+	"rhs": Or(
+		Var("Identifier"),
+		And(Term("["), Var("rhs"), Term("]")),
+		And(Term("{"), Var("rhs"), Term("}")),
+		And(Term("("), Var("rhs"), Term(")")),
+		And(Var("rhs"), Term("|"), Var("rhs")), // note: potential bug here.
+		And(Var("rhs"), Term(","), Var("rhs")), // <- might not be reachable.
+	),
+}
 
 /*
 special sequences are used for regular expressions
@@ -142,7 +155,7 @@ regex.Match(`[a-z]+\`)
 
 func init() {
 	// initialize by pushing the starting production.
-	toks, _ := parseToken("$", exMap["$"]) 
+	toks, _ := parseToken("$", exMap["$"])
 	push(toks...)
 }
 
@@ -195,7 +208,7 @@ func process(a string) error {
 	// achieve this affect, call "process" again, using the same
 	// input.
 	switch X.kind {
-		
+
 	case EndVariable:
 		fmt.Println(X.data)
 		return process(a)
@@ -203,7 +216,6 @@ func process(a string) error {
 	case Variable:
 		X = exMap[X.data]
 
-	
 	}
 	//δ := functionMap[X.kind]
 	// results, err := δ(a, X)
@@ -218,9 +230,9 @@ func process(a string) error {
 }
 
 func parseToken(s string, t *token) ([]*token, error) {
-	
+
 	var δ (func(string, *token) ([]*token, error))
-	
+
 	switch t.kind {
 	case Terminal:
 		δ = parseTerminal
@@ -233,7 +245,7 @@ func parseToken(s string, t *token) ([]*token, error) {
 	default:
 		panic(fmt.Sprint("unknown token kind(%v", t.kind))
 	}
-	
+
 	return δ(s, t)
 }
 
