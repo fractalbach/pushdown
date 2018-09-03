@@ -5,6 +5,9 @@ parsers on the fly.  What "on the fly" means is that the program is
 given an input string and a Context-Free Grammar, and the output will
 be parsed and structured.
 
+## Note: Project Status
+
+pushed down to the bottom of the stack of priorities. 
 
 ## Purpose
 
